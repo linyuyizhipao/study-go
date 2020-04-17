@@ -2,14 +2,19 @@ package main
 
 import (
 	"fmt"
-	"github.com/gobuffalo/packr"
+	"hugo/extend/isreflect"
 )
-func main(){
-	box := packr.NewBox("./config")
-	data,err := box.FindString("redis.txt")
-	if err != nil {
-		fmt.Println(err)
-		return
+
+type order struct {
+	OrdId      int
+	CustomerId struct{Sdf string}
+}
+
+func main() {
+	o := order{
+		OrdId:      456,
+		CustomerId: struct{ Sdf string }{Sdf: "fdfdaas"},
 	}
-	fmt.Println("Contents of file:", data)
+	m:=isreflect.ReadStruct(o)
+	fmt.Println(m)
 }
