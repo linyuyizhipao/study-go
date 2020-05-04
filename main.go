@@ -4,217 +4,180 @@ import (
 	"context"
 	"fmt"
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
-	"go.mongodb.org/mongo-driver/mongo/readconcern"
-	"go.mongodb.org/mongo-driver/mongo/readpref"
-	"go.mongodb.org/mongo-driver/mongo/writeconcern"
+	"hugo/mon"
+	"strconv"
+	"sync"
 	"time"
 )
 
-type Goods struct {
-	Id primitive.ObjectID `bson:"_id"`
-	Name string `bson:"name"`
-	Price int `bson:"price"`
-	Inventory int `bson:"inventory"`
-	CreateTime int64 `bson:"create_time"`
+type Abs struct {
+	UserName string `bson:"username"`
+	Email string `bson:"email"`
 }
 
-type Order struct {
-	Id primitive.ObjectID `bson:"_id"`
-	Uid primitive.ObjectID `bson:"uid"`
-	GoodsId primitive.ObjectID `bson:"goods_id"`
-	Price int `bson:"price"`
-	CreateTime int64 `bson:"create_time"`
-}
-type User struct {
-	Id primitive.ObjectID `bson:"_id"`
-	UserName string `bson:"user_name"`
-	Balance int `bson:"balance"`
-	CreateTime int64 `bson:"create_time"`
-}
+func main(){
+	switch1()
+	return
 
-type UserGoodsByOrderRel struct {
-	GoodsId primitive.ObjectID
-	Uid primitive.ObjectID
-}
-var userGoodsByOrderRelChan = make(chan UserGoodsByOrderRel,5000)
+	abs := new(Abs)
+	fmt.Println(time.Now().Format("2006-01-02 15:04:05"))
+	fmt.Println(time.Now().Second())
 
+	singResult :=mon.Client.Collection("tbl_data").FindOne(context.TODO(),bson.M{"username":"胡工827"})
+	singResult.Decode(abs)
+	fmt.Println(time.Now().Format("2006-01-02 15:04:05"))
+	fmt.Println(time.Now().Second())
+	return
 
-func main() {
-	//1.创建5000个用户并发发生并发抢一个商品
-	userBuyGoods()
-	//2.消费队列处理生成有效订单
-	generateOrder()
+	wg := new(sync.WaitGroup)
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		go insertMon(wg)
+	}
+	wg.Wait()
 
-	//3.websocket通知消息
-	inform()
+	fmt.Println(time.Now().Format("2006-01-02 15:04:05"))
 
-	fmt.Println("结束完毕")
 }
 
-func userBuyGoods(){
-
-	//生成5000个用户
-	user := new (User)
-	goods := new (Goods)
-	userGoodsByOrderRel := new(UserGoodsByOrderRel)
-	userModel :=Mon.Collection("tbl_user")
-	goodsModel :=Mon.Collection("tbl_goods")
-	ordersModel :=Mon.Collection("tbl_order")
-
-	if _,err := userModel.DeleteMany(context.TODO(),bson.M{});err!=nil{
-		fmt.Println(err)
-	}
-	if _,err := goodsModel.DeleteMany(context.TODO(),bson.M{});err!=nil{
-		fmt.Println(err)
-	}
-	if _,err := ordersModel.DeleteMany(context.TODO(),bson.M{});err!=nil{
-		fmt.Println(err)
-	}
-
-	for i:=0;i<5000;i++{
-		user.Balance = 1000
-		user.CreateTime = time.Now().Unix()
-		user.Id = primitive.NewObjectID()
-		user.UserName = "hugo"
-		insertId,err :=userModel.InsertOne(context.TODO(),user)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		fmt.Println(insertId,"用户生成成功")
-	}
-
-	//生成一个商品
-	goods.Id = primitive.NewObjectID()
-	goods.CreateTime = time.Now().Unix()
-	goods.Name = "短袖"
-	goods.Price = 128
-	goods.Inventory = 500
-	goodsId,err :=goodsModel.InsertOne(context.TODO(),goods)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	fmt.Println(goodsId,"商品生成成功")
-
-	filter := bson.M{"user_name":"hugo"}
-	findOptios :=options.Find()
-	findOptios.SetLimit(5000)
-	cur,err :=userModel.Find(context.TODO(),filter,findOptios)
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	for cur.Next(context.TODO()){
-		err :=cur.Decode(user)
-		if err != nil {
-			fmt.Println(err)
-		}
-		userGoodsByOrderRel.Uid = user.Id
-		userGoodsByOrderRel.GoodsId = goods.Id
-		userGoodsQueue := *userGoodsByOrderRel
-		userGoodsByOrderRelChan <- userGoodsQueue
-	}
-	if err :=cur.Close(context.TODO());err!=nil{
-		fmt.Println(err)
-	}
-
-}
-func generateOrder(){
-	order := new(Order)
-	goodsInfo := new(Goods)
-	user := new(User)
-	filter := bson.M{"name":"短袖"}
-	if err :=Mon.Collection("tbl_goods").FindOne(context.TODO(),filter).Decode(goodsInfo);err!=nil{
-		fmt.Println(err)
-	}
-	inventory := goodsInfo.Inventory
+func insertMon(wg *sync.WaitGroup){
 
 	defer func() {
-		close(userGoodsByOrderRelChan)
+		wg.Done()
 	}()
 
-	for userGoodsByOrder := range userGoodsByOrderRelChan{
-		fmt.Println("已经有人在抢了")
-		if inventory <= 0 {
-			fmt.Println("商品抢完了")
-			return
-		}
-		findFilter := bson.M{"_id":userGoodsByOrder.Uid}
-		//检查用户是否合法
-		if err :=Mon.Collection("tbl_user").FindOne(context.TODO(),findFilter).Decode(user);err!=nil || user.Balance < 0 || user.Balance < goodsInfo.Price {
-			fmt.Println(err,"余额：",user.Balance)
-			continue
-		}
+	data := Abs{"hugo","136586551@163.com"}
 
-		order.Id = primitive.NewObjectID()
-		order.GoodsId = userGoodsByOrder.GoodsId
-		order.Uid = userGoodsByOrder.Uid
-		order.Price = goodsInfo.Price
-		order.CreateTime = time.Now().Unix()
-		_,err :=Mon.Collection("tbl_order").InsertOne(context.TODO(),order)
+	for i := 1; i < 100000; i++ {
+		iStr := strconv.Itoa(i)
+		data.UserName = fmt.Sprintf("胡工%s",iStr)
+		insertRes,err:=mon.Client.Collection("tbl_data").InsertOne(context.TODO(),data)
 		if err != nil {
-			fmt.Println(err)
+			fmt.Println(err,insertRes)
 		}
-		filter :=bson.M{"_id":userGoodsByOrder.Uid}
-		update := bson.D{
-			{"$inc", bson.D{
-				{"age", -goodsInfo.Price},
-			}},
-		}
-		if _,err :=Mon.Collection("tbl_user").UpdateOne(context.TODO(),filter,update);err!=nil{
-			fmt.Println(err)
-		}
-
-		inventory--
-
 	}
-}
-func inform(){
 
 }
 
+func doSth(){
+	//ctx,cancel :=context.WithTimeout(context.Background(),time.Duration(150)* time.Microsecond)
+	timer := time.NewTimer(2*time.Second)
 
+	//go sth(ctx)
 
+	for range timer.C{
+		fmt.Println(time.Now().Format("2006-01-02 15:04:05"))
+	}
 
-func init(){
-	Dbconnect()
-}
-
-var Mon *mongo.Database
-func GetContext() (ctx context.Context) {
-	ctx, _ = context.WithTimeout(context.TODO(), 10*time.Second)
 	return
-}
-func Dbconnect() {
-	want, err := readpref.New(readpref.SecondaryMode) //表示只使用辅助节点
-	if err != nil {
-		fmt.Println(err)
-	}
-	wc := writeconcern.New(writeconcern.WMajority())
-	readconcern.Majority()
-	//链接mongo服务
-	opt := options.Client().ApplyURI("mongodb://localhost:27017")
-	opt.SetLocalThreshold(3 * time.Second)     //只使用与mongo操作耗时小于3秒的
-	opt.SetMaxConnIdleTime(5 * time.Second)    //指定连接可以保持空闲的最大毫秒数
-	opt.SetMaxPoolSize(10)                    //使用最大的连接数
-	opt.SetReadPreference(want)                //表示只使用辅助节点
-	opt.SetReadConcern(readconcern.Majority()) //指定查询应返回实例的最新数据确认为，已写入副本集中的大多数成员
-	opt.SetWriteConcern(wc)                    //请求确认写操作传播到大多数mongod实例
-	ctx := GetContext()
+	for {
+		select{
+		case <-timer.C:
+			fmt.Println("定时器时间到了，开始要取消cancel()\n")
+			//cancel()
+			return
+		default:
+			//fmt.Println("还没有开始123")
 
-	if database, err := mongo.Connect(ctx, opt); err != nil {
-		fmt.Println(err)
-	}else{
-		//UseSession(client)
-		//判断服务是否可用
-		if err = database.Ping(ctx, readpref.Primary()); err != nil {
-			fmt.Println(err)
 		}
+	}
 
-		Mon = database.Database("testing_base")
+}
+
+func sth(ctx context.Context){
+	fmt.Println(1111)
+	for{
+		time.Sleep(time.Microsecond * 100)
+		select {
+		case <-ctx.Done():
+			fmt.Println("取消结束了")
+			return
+		default:
+			fmt.Println("还没有被结束567")
+		}
 	}
 }
+
+//定时器每隔2秒执行一次代码块
+func timer1(){
+	timer := time.NewTimer(2*time.Second)
+	for range timer.C{
+		fmt.Println(time.Now().Format("2006-01-02 15:04:05"))
+	}
+}
+
+//定时器隔2秒执行一次代码块,仅仅执行一次
+func timer2(){
+	timer := time.NewTimer(2*time.Second)
+	i :=0
+	for true {
+		select{
+		case <-timer.C:
+			fmt.Println("定时器执行了")
+		default:
+			if i == 0 {
+				fmt.Println("定时器还没执行了333333")
+			}
+		}
+		i++
+	}
+}
+
+//context 执行
+//for 里面的break  会直接终止for循坏
+//select 里面的case里面的break是终止case里面的代码块执行，不会终止到select外层的for
+//select 里面不用break也只会执行一个case
+func context1(){
+	ctx,cancel :=context.WithTimeout(context.Background(),2 * time.Second)
+	i:=0
+
+	go func(ctx context.Context) {
+		for{
+
+			select{
+				case <-time.After(10 * time.Nanosecond):
+					fmt.Println("时间1")
+					fmt.Println("78787878")
+
+				case <-ctx.Done():
+					fmt.Println("取消的命令来了")
+					return
+				default:
+					if i == 0 {
+						fmt.Println("11122333")
+					}
+					break
+			}
+			i++
+		}
+	}(ctx)
+
+	time.Sleep(1 * time.Second)
+	fmt.Println("cancel来取消的")
+	cancel()
+
+}
+
+//执行到的switch的case如果有 fallthrough  就会在不判断的情况下直接执行下一个case
+func switch1(){
+	df :=1
+	switch df{
+	case 1:
+		fmt.Println(11)
+		fallthrough
+	case 2,3,4:
+		fmt.Println(222)
+		fallthrough
+	case 22,32,42:
+		fmt.Println(8989)
+	case 222,322,422:
+		fmt.Println(84378434)
+
+	}
+}
+
+//后面sync.atomic
+
+
+
+
