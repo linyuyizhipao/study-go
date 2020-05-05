@@ -7,6 +7,7 @@ import (
 	"hugo/mon"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -16,7 +17,7 @@ type Abs struct {
 }
 
 func main(){
-	switch1()
+	atomic1()
 	return
 
 	abs := new(Abs)
@@ -175,9 +176,72 @@ func switch1(){
 
 	}
 }
+type Mutex struct {
+	key  int32
+	sema uint32
+}
+
+//sync.lock,sync.Rlock,
+//Lock会让 Lock,Rlock等待，也就是锁住的意思
+//Rlock会让 lock等待，但是不会让Rlock等待
+func lock1(){
+	m := new(sync.RWMutex)
+
+	// 多个同时读
+	go lockRead(1,m)
+	go lockRead(2,m)
+	time.Sleep(1*time.Second)
+
+	go lockRead3(3,m)
+
+	time.Sleep(15*time.Second)
+}
+func lockRead(i int,m *sync.RWMutex) {
+	println(i,"read start")
+
+	m.RLock()
+	println(i,"reading")
+	time.Sleep(5*time.Second)
+	m.RUnlock()
+
+	println(i,"read over")
+}
+func lockRead3(i int,m *sync.RWMutex) {
+	println(i,"read3 start")
+
+	m.Lock()
+	println(i,"read3ing")
+	time.Sleep(1*time.Second)
+	m.Unlock()
+
+	println(i,"read3 over")
+}
+
 
 //后面sync.atomic
+//加锁是一种悲观策略。原来所有锁的底层又跑到操作系统那里去了，想想也是琐是用来锁住多线程的，线程上游是进程，进程上游是操作系统，最终交汇点进程无疑
+//操作系统的锁策略是时间换空间的策略，从而保证数据安全
+//无锁策略，利用到了cps算法，并没有惊动到操作系统那一层，让各线程自身就具备鉴别是否资源已经被抢占，https://blog.csdn.net/yanluandai1985/article/details/82686486
+func atomic1(){
+	m := int32(0)
+	wg := new(sync.WaitGroup)
+	for i := 1; i < 1000; i++ {
+		wg.Add(1)
+
+		go func() {
+			if d :=atomic.AddInt32(&m,1);d==1{
+				//fmt.Println(123)
+			}else{
+				//fmt.Println(d,222)
+			}
+
+			wg.Done()
+		}()
+	}
+	wg.Wait()
+
+	fmt.Println(m)
 
 
 
-
+}
