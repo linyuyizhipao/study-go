@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"go.mongodb.org/mongo-driver/bson"
 	"hugo/mon"
+	"hugo/publishtask"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -16,8 +17,17 @@ type Abs struct {
 	Email string `bson:"email"`
 }
 
+
+func b()(i int,err error){
+	if err := fmt.Errorf("aaaa");err!=nil{
+		fmt.Println(err,232323)
+	}
+	fmt.Println(err,8888)
+	return
+}
+
 func main(){
-	atomic1()
+	publishtask.CreateUser()
 	return
 
 	abs := new(Abs)
